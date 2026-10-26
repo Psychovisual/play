@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#061436">
+<meta name="robots" content="noindex">
+<meta name="pgfx-phone" content="2">
+<title>Play</title>
+<!-- Picturall GFX phone page (6.2.4). One file, no external resources: put it on any static web host (GitHub Pages,
+     Netlify, Cloudflare Pages...). Everything it needs comes in the address of the QR code: room, token, Ably host,
+     and the side of the room (the totem the code was scanned on). -->
+<style>
+:root{--bg:#061436;--bg2:#0B2A6B;--accent:#00C8FF;--text:#fff;--dim:rgba(255,255,255,.66);--line:rgba(255,255,255,.14);--ok:#2FB37A;--bad:#E5484D;--left:#3A7BE0;--right:#E5484D}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{background:linear-gradient(160deg,var(--bg) 0%,var(--bg2) 100%) fixed;color:var(--text);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  display:flex;flex-direction:column;min-height:100%;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);touch-action:manipulation;-webkit-user-select:none;user-select:none}
+header{display:flex;align-items:center;gap:10px;padding:14px 18px 6px}
+header h1{flex:1;margin:0;font-size:17px;font-weight:700;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#dot{width:9px;height:9px;border-radius:50%;background:#888;flex:none}
+#dot.on{background:var(--ok)}#dot.bad{background:var(--bad)}
+#me{font-size:13px;color:var(--dim);white-space:nowrap}
+main{flex:1;display:flex;flex-direction:column;padding:10px 18px 22px;max-width:560px;width:100%;margin:0 auto}
+.card{background:rgba(255,255,255,.07);border:1px solid var(--line);border-radius:18px;padding:22px 20px;margin-top:8px}
+.center{text-align:center;margin:auto 0}
+.big{font-size:28px;font-weight:800;line-height:1.15;margin:0 0 8px}
+.mid{font-size:20px;font-weight:700;margin:0 0 6px}
+.dim{color:var(--dim)}
+input{width:100%;font-size:20px;padding:14px 16px;border-radius:12px;border:1px solid var(--line);background:rgba(0,0,0,.25);color:var(--text);outline:none;-webkit-user-select:text;user-select:text}
+input:focus{border-color:var(--accent)}
+button{font:inherit;border:0;border-radius:14px;cursor:pointer;color:#fff}
+.go{width:100%;margin-top:12px;padding:16px;font-size:20px;font-weight:800;background:var(--accent);color:#001}
+.go:disabled{opacity:.5}
+.qhd{display:flex;justify-content:space-between;align-items:center;font-size:14px;color:var(--dim);margin-top:4px}
+.qtext{font-size:22px;font-weight:700;line-height:1.25;margin:10px 0 14px}
+.bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin-bottom:14px}
+.bar i{display:block;height:100%;background:var(--accent);transform-origin:left center}
+.opts{display:grid;gap:10px}
+.opt{display:flex;align-items:center;gap:12px;min-height:64px;padding:12px 14px;font-size:19px;font-weight:700;text-align:left;background:var(--c);
+  box-shadow:0 3px 0 rgba(0,0,0,.25);transition:opacity .2s,transform .1s}
+.opt:active{transform:scale(.98)}
+.opt b{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:9px;background:rgba(0,0,0,.25);font-size:17px}
+.opt span{flex:1}
+.opt.dim{opacity:.28}.opt.sel{outline:4px solid #fff;outline-offset:2px}
+.opt .pc{flex:none;font-size:15px;opacity:.9}
+.opt.ok{outline:4px solid var(--ok);outline-offset:2px}
+.opt[disabled]{cursor:default}
+.res{font-size:30px;font-weight:900;margin:6px 0 4px}
+.res.ok{color:#5BE39A}.res.bad{color:#FF8A8D}
+.rows{margin-top:14px;text-align:left}
+.row{display:flex;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line);font-size:16px}
+.row b{width:30px;color:var(--dim)}.row span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row i{font-style:normal;font-weight:700}
+.row.me{background:rgba(255,255,255,.08);border-radius:8px}
+.spin{width:38px;height:38px;margin:0 auto 14px;border:4px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:s 1s linear infinite}
+@keyframes s{to{transform:rotate(360deg)}}
+.note{font-size:13px;color:var(--dim);text-align:center;margin-top:16px}
+/* higher or lower */
+.hcur{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:14px 16px;border-radius:14px;background:rgba(255,255,255,.08);margin-bottom:8px}
+.hcur b{font-size:19px}.hcur i{font-style:normal;font-weight:800;font-size:22px;color:var(--accent)}
+.hnx{font-size:22px;font-weight:800;text-align:center;margin:14px 0 12px}
+.hbtn{display:block;width:100%;padding:22px;margin-top:10px;font-size:24px;font-weight:900;border-radius:16px}
+.hbtn.up{background:#2FB37A}.hbtn.dn{background:#E5484D}.hbtn.sel{outline:4px solid #fff;outline-offset:2px}.hbtn.dim{opacity:.3}
+/* left vs right */
+.team{border-radius:18px;padding:22px;text-align:center;font-size:30px;font-weight:900;text-transform:uppercase;margin-top:10px}
+.tap{flex:1;min-height:52vh;margin-top:12px;border-radius:26px;font-size:46px;font-weight:900;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  box-shadow:inset 0 -10px 0 rgba(0,0,0,.25);transition:transform .05s}
+.tap.hit{transform:scale(.97)}
+.tap small{font-size:20px;font-weight:700;opacity:.85;margin-top:6px}
+/* spot the ball */
+.spot{position:relative;width:100%;border-radius:12px;overflow:hidden;background:#000;touch-action:none}
+.spot img{display:block;width:100%;height:100%;object-fit:fill}
+.spot .mk{position:absolute;width:30px;height:30px;margin:-15px 0 0 -15px;border-radius:50%;border:4px solid #fff;box-shadow:0 0 0 3px #E5484D,0 2px 8px rgba(0,0,0,.6);pointer-events:none}
+.spot .mk.real{border-color:#fff;box-shadow:0 0 0 3px #2FB37A}
+.spot.big{position:fixed;inset:0;z-index:5;border-radius:0}
+/* mosaic */
+.mapw{position:relative;margin:4px 0 10px}
+.mapw canvas{display:block;width:100%;image-rendering:pixelated;border-radius:6px;background:#000}
+.mapw .me{position:absolute;border:3px solid #fff;box-shadow:0 0 0 2px #000;pointer-events:none;animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{border-color:var(--accent)}}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;width:min(100%,300px,40vh);margin:0 auto;aspect-ratio:var(--ar,1);touch-action:none}
+.grid4 i{border-radius:4px;background:rgba(255,255,255,.07);box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
+.pal{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:12px auto 0;max-width:330px}
+.pal button{width:34px;height:34px;border-radius:50%;box-shadow:inset 0 0 0 2px rgba(255,255,255,.35)}
+.pal button.on{outline:3px solid #fff;outline-offset:2px}
+.pal button.er{background:repeating-linear-gradient(45deg,#333 0 6px,#555 6px 12px)}
+</style>
+</head>
+<body>
+<header><span id="dot"></span><h1 id="title">Loading</h1><span id="me"></span></header>
+<main id="main"><div class="center"><div class="spin"></div><p class="dim">Connecting</p></div></main>
+<script>
+"use strict";
+(function () {
+  const H = new URLSearchParams(location.hash.slice(1)), Q = new URLSearchParams(location.search);
+  const room = H.get("r") || Q.get("r") || "", token = H.get("k") || "", local = H.get("l") === "1" || Q.get("local") === "1" || (!token && !!room);
+  let host = H.get("h") || "main.realtime.ably.net";
+  const base = /^https?:\/\//.test(host) ? host.replace(/\/$/, "") : "https://" + host;
+  const stateCh = `pgfx:${room}:state`, $ = s => document.querySelector(s), main = $("#main");
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const store = (() => { try { return JSON.parse(localStorage.getItem("pgfx:" + room) || "{}"); } catch (e) { return {}; } })();
+  const save = () => { try { localStorage.setItem("pgfx:" + room, JSON.stringify(store)); } catch (e) {} };
+  if (!store.id) { const a = new Uint8Array(8); crypto.getRandomValues(a); store.id = "p" + Array.from(a, b => (b % 36).toString(36)).join(""); save(); }
+  if (!store.side && /^[LR]$/.test(H.get("s") || "")) { store.side = H.get("s"); save(); }      // the totem scanned first decides
+  const ID = store.id, shard = `pgfx:${room}:in${[...ID].reduce((s, c) => s + c.charCodeAt(0), 0) % 8}`;
+  let S = null, offset = 0, joined = false, joinSent = 0, full = false, gone = false, expired = false, wantJoin = !!store.joinedRoom;
+  const sent = {};                 // answer key -> {a, acked}
+  let ws = null, es = null, view = "", tick = null;
+  const imgs = {};                 // spot round id -> {src, w, h}
+  let mosaic = null;               // {r, cols, rows, data}
+  const pix = {};                  // mosaic round id -> 16 palette indices of my square
+  let taps = { r: null, n: 0, sent: 0 }, pxSent = { r: null, s: "", at: 0, timer: null }, spotGuess = {};
+
+  if (!room) { main.innerHTML = `<div class="center card"><p class="big">Scan the code</p><p class="dim">Open this page by scanning the QR code on the screen.</p></div>`; $("#title").textContent = "Play"; return; }
+
+  // ---------------------------------------------------------------- transport
+  function setDot(st) { $("#dot").className = st; }
+  function onMsg(name, data) {
+    if (!data || typeof data !== "object") return;
+    if (name === "state") {
+      if (S && data.now && S.now && data.now < S.now) return;          // an older state arriving late
+      const prev = S;
+      S = data; offset = (data.now || Date.now()) - Date.now();
+      const me = (data.me || {})[ID];
+      if (me) { joined = true; if (me[4] && me[4] !== store.side) { store.side = me[4]; save(); } }
+      if ((data.kicked || []).includes(ID)) gone = true;
+      if (me && data.q && me[3] >= 0 && sent[data.q.key]) sent[data.q.key].acked = true;
+      applyLook(data.look);
+      if (data.q && data.q.type === "spot" && !imgs[data.q.id] && data.q.img) publish({ t: "img", id: ID, r: data.q.id });
+      if (prev && prev.phase === "question" && data.phase !== "question") flushInput();
+      render();
+      if (!joined && wantJoin && data.phase !== "closed") join();
+    } else if (name === "joined") {
+      if ((data.ok || []).some(x => x[0] === ID)) { joined = true; full = false; const x = data.ok.find(x => x[0] === ID); store.nick = x[1]; if (x[2]) store.side = x[2]; store.joinedRoom = room; save(); render(); }
+      if ((data.full || []).includes(ID)) { full = true; render(); }
+    } else if (name === "acks") {
+      if ((data.ids || []).includes(ID) && sent[data.q]) { sent[data.q].acked = true; render(); }
+    } else if (name === "img") {
+      imgs[data.r] = data; if (S && S.q && S.q.id === data.r) { view = ""; render(); }
+    } else if (name === "mosaic") {
+      mosaic = data; drawMap();
+      const b = myBlock();
+      if (b != null && !pix[data.r] && data.data) { const s = data.data.substr(b * 16, 16); if (/[1-9a-f]/.test(s)) { pix[data.r] = [...s].map(c => parseInt(c, 16)); drawGrid(); } }
+    }
+  }
+  async function publish(obj, tries = 3) {
+    if (local) { if (ws && ws.readyState === 1) { ws.send(JSON.stringify({ t: "aud_in", data: obj })); return true; } return false; }
+    for (let i = 0; i < tries; i++) {
+      try {
+        const r = await fetch(`${base}/channels/${encodeURIComponent(shard)}/messages`, { method: "POST",
+          headers: { "Authorization": "Bearer " + btoa(token), "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "in", data: JSON.stringify(obj), encoding: "json" }) });
+        if (r.ok) return true;
+        if (r.status === 401) { expired = true; render(); return false; }
+      } catch (e) {}
+      await new Promise(r => setTimeout(r, 600 * (i + 1)));
+    }
+    return false;
+  }
+  async function latest() {
+    if (local) return;
+    try {
+      const r = await fetch(`${base}/channels/${encodeURIComponent(stateCh)}/messages?limit=8&direction=backwards`, { headers: { "Authorization": "Bearer " + btoa(token) } });
+      if (r.status === 401) { expired = true; render(); return; }
+      const list = await r.json();
+      const m = (list || []).find(x => x.name === "state");
+      if (m) onMsg("state", decode(m));
+      const mz = (list || []).find(x => x.name === "mosaic");
+      if (mz) onMsg("mosaic", decode(mz));
+    } catch (e) {}
+  }
+  function decode(env) {
+    let d = env.data;
+    if (typeof d === "string" && (/json/.test(env.encoding || "") || /^[{[]/.test(d))) { try { d = JSON.parse(d); } catch (e) {} }
+    return d;
+  }
+  function connectAbly() {
+    if (es) es.close();
+    es = new EventSource(`${base}/sse?` + new URLSearchParams({ v: "1.2", channels: stateCh, accessToken: token, enveloped: "true" }));
+    es.onopen = () => { setDot("on"); latest(); };
+    es.onmessage = ev => { try { const env = JSON.parse(ev.data); onMsg(env.name, decode(env)); } catch (e) {} };
+    es.addEventListener("error", ev => {
+      if (ev.data) { try { const e = JSON.parse(ev.data); if (e.statusCode === 401) { expired = true; render(); } } catch (x) {} }
+      setDot(es.readyState === 2 ? "bad" : "");
+      if (es.readyState === 2) { latest(); setTimeout(() => { if (!expired) connectAbly(); }, 3000); }   // latest() tells an expired code (401)
+    });
+  }
+  function connectLocal() {
+    ws = new WebSocket(location.origin.replace(/^http/, "ws") + "/ws");
+    ws.onopen = () => { setDot("on"); ws.send(JSON.stringify({ t: "hello", role: "phone", info: { room } })); };
+    ws.onmessage = ev => { try { const m = JSON.parse(ev.data); if (m.t === "aud_msg") onMsg(m.name, m.data); } catch (e) {} };
+    ws.onclose = () => { setDot("bad"); setTimeout(connectLocal, 1500); };
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    if (local) { if (!ws || ws.readyState > 1) connectLocal(); } else { if (!es || es.readyState === 2) connectAbly(); else latest(); }
+  });
+  local ? connectLocal() : connectAbly();
+
+  // ---------------------------------------------------------------- actions
+  function join(nick) {
+    if (nick != null) { store.nick = nick; save(); }
+    wantJoin = true; joinSent = Date.now();
+    const m = { t: "join", id: ID, nick: store.nick || "" };
+    if (store.side) m.side = store.side;
+    publish(m);
+    setTimeout(() => { if (!joined && !full && Date.now() - joinSent >= 4000 && S && S.phase !== "closed") join(); }, 4500);
+    render();
+  }
+  function answer(q, a) {
+    if (sent[q.key]) return;
+    sent[q.key] = { a, acked: false };
+    publish({ t: "ans", id: ID, q: q.key, a });
+    setTimeout(function again() {
+      const s = sent[q.key];
+      if (s && !s.acked && S && S.phase === "question" && S.q && S.q.key === q.key) { publish({ t: "ans", id: ID, q: q.key, a }); setTimeout(again, 3000); }
+    }, 3000);
+    render();
+  }
+  function sendSpot(q) {
+    const g = spotGuess[q.id]; if (!g || sent[q.key]) return;
+    sent[q.key] = { a: 0, acked: false };
+    publish({ t: "spot", id: ID, r: q.id, x: g.x, y: g.y });
+    setTimeout(function again() {
+      const s = sent[q.key];
+      if (s && !s.acked && S && S.phase === "question" && S.q && S.q.key === q.key) { publish({ t: "spot", id: ID, r: q.id, x: g.x, y: g.y }); setTimeout(again, 3000); }
+    }, 3000);
+    view = ""; render();
+  }
+  // taps and drawings are batched: one message every 2 s at most (the free Ably account counts every message)
+  setInterval(() => {
+    if (!S || S.phase !== "question" || !S.q) return;
+    if (S.q.type === "lvr" && taps.r === S.q.id && taps.n !== taps.sent) { taps.sent = taps.n; publish({ t: "tap", id: ID, r: taps.r, n: taps.n }, 1); }
+    if (S.q.type === "mosaic") sendPix(false);
+  }, 2000);
+  function flushInput() {
+    if (taps.r && taps.n !== taps.sent) { taps.sent = taps.n; publish({ t: "tap", id: ID, r: taps.r, n: taps.n }); }
+  }
+  function sendPix(now) {
+    const q = S && S.q; if (!q || q.type !== "mosaic" || S.phase !== "question") return;
+    const s = (pix[q.id] || []).map(v => v.toString(16)).join("");
+    if (s.length !== 16 || s === pxSent.s) return;
+    if (!now && Date.now() - pxSent.at < 1900) return;
+    pxSent = { ...pxSent, s, at: Date.now() };
+    publish({ t: "px", id: ID, r: q.id, b: s }, 1);
+  }
+  function applyLook(L) {
+    if (!L) return;
+    const r = document.documentElement.style;
+    for (const k of ["bg", "bg2", "accent", "left", "right"]) if (L[k]) r.setProperty("--" + k, L[k]);
+  }
+
+  // ---------------------------------------------------------------- screens
+  const LET = "ABCDEF";
+  const colors = () => (S && S.look && S.look.colors) || ["#E5484D", "#3A7BE0", "#F0B429", "#2FB37A", "#A35BE0", "#EF7D2D"];
+  const me = () => (S && S.me && S.me[ID]) || null;
+  const mySide = () => (me() && me()[4]) || store.side || "";
+  const myBlock = () => S && S.blocks && S.blocks[ID] != null ? S.blocks[ID] : null;
+  function screen(key, html) { if (view !== key) { main.innerHTML = html; view = key; return true; } return false; }
+  function countdown(q) {
+    const t = () => {
+      const left = Math.max(0, q.deadline - (Date.now() + offset)), el = $("#left"), bar = $("#bar");
+      if (el) el.textContent = Math.ceil(left / 1000) + " s";
+      if (bar) bar.style.transform = `scaleX(${Math.min(1, left / (q.time * 1000))})`;
+    };
+    t(); tick = setInterval(t, 200);
+  }
+  const qhead = (q, extra = "") => `<div class="qhd"><span>Round ${q.n} / ${q.total}${extra}</span><span id="left"></span></div><div class="bar"><i id="bar"></i></div>`;
+  function render() {
+    clearInterval(tick); tick = null;
+    $("#title").textContent = (S && S.title) || "Play";
+    const m = me();
+    $("#me").textContent = joined && store.nick ? store.nick + (m && m[0] ? ` · ${m[0]} pts` : "") : "";
+    if (expired) return screen("expired", `<div class="center card"><p class="big">This code has expired</p><p class="dim">Scan the code on the screen again.</p></div>`);
+    if (gone) return screen("gone", `<div class="center card"><p class="big">You have been removed from the game</p></div>`);
+    if (full && !joined) return screen("full", `<div class="center card"><p class="big">Sorry, the room is full</p><p class="dim">Enjoy the show on the screen.</p></div>`);
+    if (!S) return screen("wait0", `<div class="center"><div class="spin"></div><p class="dim">Connecting</p></div>`);
+    const ph = S.phase;
+    if (ph === "closed") return screen("closed", joined || store.joinedRoom ? `<div class="center card"><p class="big">Thanks for playing!</p><p class="dim">The game is closed.</p></div>`
+      : `<div class="center card"><p class="big">The game has not started yet</p><p class="dim">Keep this page open: it starts by itself.</p></div>`);
+    if (!joined) {
+      if (wantJoin && Date.now() - joinSent < 8000) return screen("joining", `<div class="center"><div class="spin"></div><p class="dim">Joining</p></div>`);
+      if (screen("join", `<div class="center card"><p class="big">${esc(S.title)}</p>${S.nick ? `<p class="dim">Choose a name for the screen</p>
+          <input id="nick" maxlength="16" autocomplete="nickname" placeholder="Your name" value="${esc(store.nick || "")}">` : `<p class="dim">Tap to join the game.</p>`}
+          <button class="go" id="join">Join</button><p class="note">No account, no personal data: just a name for the scores.</p></div>`)) {
+        const go = () => { const v = S.nick ? $("#nick").value.trim() : ""; if (S.nick && !v) { $("#nick").focus(); return; } join(v); };
+        $("#join").onclick = go;
+        if ($("#nick")) $("#nick").onkeydown = e => { if (e.key === "Enter") go(); };
+      }
+      return;
+    }
+    if (ph === "lobby") return screen("lobby:" + store.nick, `<div class="center card"><p class="big">You're in${store.nick ? ", " + esc(store.nick) : ""}!</p><p class="dim">Look at the screen: the game is about to start.</p></div>`);
+    if (ph === "board" || ph === "end") {
+      const rows = (S.board || []).map(r => `<div class="row ${m && r[0] === m[1] && r[1] === store.nick ? "me" : ""}"><b>${r[0]}</b><span>${esc(r[1])}</span><i>${r[2]}</i></div>`).join("");
+      return screen(`${ph}:${m && m[0]}:${m && m[1]}`, `<div class="center card"><p class="mid">${ph === "end" ? "Final scores" : "Scores"}</p>
+        ${m ? `<p class="big">#${m[1]} · ${m[0]} pts</p>` : ""}<div class="rows">${rows}</div>${ph === "end" ? `<p class="note">Thanks for playing!</p>` : ""}</div>`);
+    }
+    const q = S.q;
+    if (!q) return screen("other", `<div class="center"><div class="spin"></div></div>`);
+    ({ quiz: rQuiz, poll: rQuiz, hilo: rHilo, lvr: rLvr, spot: rSpot, mosaic: rMosaic }[q.type] || rQuiz)(ph, q, m);
+  }
+
+  function rQuiz(ph, q, m) {
+    const mine = sent[q.key], myAns = mine ? mine.a : (m ? m[3] : -1);
+    if (ph === "question") {
+      const done = myAns >= 0;
+      if (screen(`q:${q.key}:${myAns}:${mine && mine.acked}`, `${qhead(q)}<div class="qtext">${esc(q.text)}</div>
+          <div class="opts">${q.options.map((o, i) => `<button class="opt ${done ? (i === myAns ? "sel" : "dim") : ""}" data-a="${i}" style="--c:${colors()[i % colors().length]}" ${done ? "disabled" : ""}><b>${LET[i]}</b><span>${esc(o)}</span></button>`).join("")}</div>
+          <p class="note">${done ? (mine && !mine.acked ? "Sending your answer" : "Answer received. Look at the screen!") : q.type === "poll" ? "Vote: there is no wrong answer" : "Answer fast: quicker answers score more"}</p>`)) {
+        main.querySelectorAll("[data-a]").forEach(b => b.onclick = () => answer(q, +b.dataset.a));
+      }
+      return countdown(q);
+    }
+    if (ph === "locked") return screen(`locked:${q.key}:${myAns}`, `<div class="center card"><p class="big">Time's up!</p>${myAns >= 0
+      ? `<p class="dim">Your answer</p><button class="opt sel" disabled style="--c:${colors()[myAns % colors().length]}"><b>${LET[myAns]}</b><span>${esc(q.options[myAns])}</span></button>`
+      : `<p class="dim">No answer this time.</p>`}</div>`);
+    if (ph === "reveal") {
+      const counts = S.counts || [], tot = counts.reduce((a, b) => a + b, 0) || 1, quiz = q.type === "quiz" && S.correct != null;
+      const pts = m ? m[2] : 0, right = quiz && myAns === S.correct;
+      return screen(`reveal:${q.key}:${myAns}:${pts}`, `<div class="card" style="text-align:center">${!quiz ? `<p class="res">Thanks for voting!</p>`
+        : myAns < 0 ? `<p class="res bad">No answer</p>` : right ? `<p class="res ok">Correct! +${pts}</p>` : `<p class="res bad">Not this time</p>`}
+        ${m ? `<p class="dim">${m[0]} points · rank ${m[1]}</p>` : ""}</div>
+        <div class="opts" style="margin-top:12px">${q.options.map((o, i) => `<button class="opt ${quiz ? (i === S.correct ? "ok" : "dim") : ""} ${i === myAns ? "sel" : ""}" disabled style="--c:${colors()[i % colors().length]}"><b>${LET[i]}</b><span>${esc(o)}</span><span class="pc">${Math.round(100 * (counts[i] || 0) / tot)}%</span></button>`).join("")}</div>`);
+    }
+    screen("q-intro", `<div class="center"><div class="spin"></div></div>`);
+  }
+
+  function rHilo(ph, q, m) {
+    const out = (S.out || []).includes(ID), mine = sent[q.key], myAns = mine ? mine.a : (m ? m[3] : -1);
+    const cur = `<div class="hcur"><b>${esc(q.cur.name)}</b><i>${esc(q.cur.value)} ${esc(q.unit || "")}</i></div>`;
+    if (ph === "intro") return screen(`hi-intro:${q.id}`, `<div class="center card"><p class="mid">${esc(q.title || "Higher or lower")}</p><p class="dim">${esc(q.text)}</p>${cur}
+      <p class="note">${q.elim ? "A wrong guess and you are out: last ones standing win." : "Every right guess scores."}</p></div>`);
+    if (out && ph !== "reveal") return screen(`hi-out:${q.id}`, `<div class="center card"><p class="big">You're out!</p><p class="dim">Watch who stays in until the end.</p></div>`);
+    if (ph === "question") {
+      const done = myAns >= 0;
+      if (screen(`hi-q:${q.key}:${myAns}:${mine && mine.acked}`, `${qhead(q, ` · ${q.step + 1} of ${q.steps}`)}${cur}
+          <div class="hnx">${esc(q.nxt.name)}: higher or lower?</div>
+          <button class="hbtn up ${done ? (myAns === 0 ? "sel" : "dim") : ""}" data-a="0" ${done ? "disabled" : ""}>▲ Higher</button>
+          <button class="hbtn dn ${done ? (myAns === 1 ? "sel" : "dim") : ""}" data-a="1" ${done ? "disabled" : ""}>▼ Lower</button>
+          <p class="note">${done ? (mine && !mine.acked ? "Sending" : "Got it. Look at the screen!") : ""}</p>`)) {
+        main.querySelectorAll("[data-a]").forEach(b => b.onclick = () => answer(q, +b.dataset.a));
+      }
+      return countdown(q);
+    }
+    if (ph === "locked") return screen(`hi-l:${q.key}:${myAns}`, `<div class="center card"><p class="big">Time's up!</p><p class="dim">${myAns === 0 ? "You said higher" : myAns === 1 ? "You said lower" : "No answer"}</p></div>`);
+    if (ph === "reveal") {
+      const right = S.correct === "same" ? myAns >= 0 : (S.correct === "higher" && myAns === 0) || (S.correct === "lower" && myAns === 1), pts = m ? m[2] : 0;
+      return screen(`hi-r:${q.key}:${out}:${pts}`, `<div class="center card"><p class="mid">${esc(q.nxt.name)}: ${esc(q.nxt.value || "")} ${esc(q.unit || "")}</p>
+        ${out && !right ? `<p class="res bad">You're out!</p>` : right ? `<p class="res ok">Right! +${pts}</p>` : `<p class="res bad">Not this time</p>`}
+        ${m ? `<p class="dim">${m[0]} points · rank ${m[1]}</p>` : ""}</div>`);
+    }
+  }
+
+  function rLvr(ph, q, m) {
+    const side = mySide(), name = side === "R" ? q.rightName : q.leftName, col = side === "R" ? "var(--right)" : "var(--left)";
+    if (ph === "intro") return screen(`lv-i:${q.id}:${side}`, `<div class="center"><p class="mid">${esc(q.title || "Left vs Right")}</p><p class="dim">You play for</p>
+      <div class="team" style="background:${col}">${esc(name)}</div><p class="note">${esc(q.text || "Tap as fast as you can!")} Get ready: it starts on the screen.</p></div>`);
+    if (ph === "question") {
+      if (taps.r !== q.id) taps = { r: q.id, n: 0, sent: 0 };
+      if (screen(`lv-q:${q.id}`, `${qhead(q)}<div class="team" style="background:${col};padding:10px;font-size:22px">${esc(name)}</div>
+          <button class="tap" id="tap" style="background:${col}">TAP!<small id="tn">0</small></button>`)) {
+        const b = $("#tap");
+        const hit = e => { e.preventDefault(); const n = e.changedTouches ? e.changedTouches.length : 1; taps.n += n; $("#tn").textContent = taps.n; b.classList.add("hit"); setTimeout(() => b.classList.remove("hit"), 50); };
+        b.addEventListener("touchstart", hit, { passive: false });
+        b.addEventListener("mousedown", hit);
+      }
+      $("#tn") && ($("#tn").textContent = taps.n);
+      return countdown(q);
+    }
+    if (ph === "locked") return screen(`lv-l:${q.id}`, `<div class="center card"><p class="big">STOP!</p><p class="dim">You tapped ${taps.r === q.id ? taps.n : 0} times for ${esc(name)}.</p></div>`);
+    if (ph === "reveal") {
+      const w = q.winner, win = w && w === side, pts = m ? m[2] : 0;
+      return screen(`lv-r:${q.id}:${w}`, `<div class="center card"><p class="big">${w ? "Winner: " + esc(w === "L" ? q.leftName : q.rightName) : "A draw!"}</p>
+        ${w ? (win ? `<p class="res ok">Your side won! +${pts}</p>` : `<p class="res bad">Your side lost</p>`) : ""}${m ? `<p class="dim">${m[0]} points · rank ${m[1]}</p>` : ""}</div>`);
+    }
+  }
+
+  function rSpot(ph, q, m) {
+    const im = imgs[q.id], ar = (q.iw || 16) / (q.ih || 9), g = spotGuess[q.id], mine = sent[q.key];
+    const pic = (cls, inner) => `<div class="spot ${cls}" id="spot" style="aspect-ratio:${ar}">${im ? `<img src="${im.src}" alt="">` : ""}${inner}</div>`;
+    if (ph === "intro") return screen(`sp-i:${q.id}:${!!im}`, `<div class="center"><p class="mid">${esc(q.title || "Spot the ball")}</p><p class="dim">${esc(q.text || "Where is the ball?")}</p>
+      ${pic("", "")}<p class="note">Look at the photo on the screen. When it opens, tap where you think the ball is.</p></div>`);
+    if (ph === "question") {
+      if (mine) return screen(`sp-d:${q.key}:${mine.acked}`, `<div class="center card"><p class="big">${mine.acked ? "Guess received!" : "Sending"}</p>${pic("", `<i class="mk" style="left:${g.x * 100}%;top:${g.y * 100}%"></i>`)}<p class="note">Look at the screen.</p></div>`);
+      if (screen(`sp-q:${q.key}:${!!im}:${g ? g.x + "," + g.y : ""}`, `${qhead(q)}<div class="qtext" style="font-size:18px">Tap where the ball is${im ? "" : " (the photo is loading)"}</div>
+          ${pic("", g ? `<i class="mk" style="left:${g.x * 100}%;top:${g.y * 100}%"></i>` : "")}
+          <button class="go" id="spGo" ${g ? "" : "disabled"}>This is my guess</button><p class="note">Tap again to move it. The big photo on the wall helps.</p>`)) {
+        const el = $("#spot");
+        el.addEventListener("pointerdown", e => {
+          const r = el.getBoundingClientRect();
+          spotGuess[q.id] = { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) };
+          view = ""; render();
+        });
+        $("#spGo").onclick = () => sendSpot(q);
+      }
+      return countdown(q);
+    }
+    if (ph === "locked") return screen(`sp-l:${q.key}`, `<div class="center card"><p class="big">Time's up!</p>${g && mine ? pic("", `<i class="mk" style="left:${g.x * 100}%;top:${g.y * 100}%"></i>`) : `<p class="dim">No guess this time.</p>`}</div>`);
+    if (ph === "reveal") {
+      const b = q.ball, pts = m ? m[2] : 0;
+      return screen(`sp-r:${q.key}:${pts}`, `<div class="center card">${mine ? `<p class="res ${pts ? "ok" : "bad"}">${pts ? `+${pts} points` : "Too far!"}</p>` : `<p class="res">The ball was here</p>`}
+        ${pic("", `${g && mine ? `<i class="mk" style="left:${g.x * 100}%;top:${g.y * 100}%"></i>` : ""}${b ? `<i class="mk real" style="left:${b.x * 100}%;top:${b.y * 100}%"></i>` : ""}`)}
+        ${m ? `<p class="dim" style="margin-top:10px">${m[0]} points · rank ${m[1]}</p>` : ""}</div>`);
+    }
+  }
+
+  function rMosaic(ph, q, m) {
+    const b = myBlock(), pal = q.palette || [];
+    if (b == null) return screen(`mo-none:${q.id}:${ph}`, `<div class="center card"><p class="big">${ph === "reveal" ? "Look at the screen!" : "The mosaic is full"}</p><p class="dim">${ph === "reveal" ? "The crowd's mosaic is on the wall." : "Every square already has a painter: watch the wall, you'll play the next round."}</p></div>`);
+    if (!pix[q.id]) pix[q.id] = Array(16).fill(0);
+    if (ph === "intro" || ph === "question") {
+      const painting = ph === "question";
+      if (screen(`mo:${q.id}:${ph}`, `${painting ? qhead(q) : `<p class="mid" style="margin-top:6px">${esc(q.title || "Crowd mosaic")}</p>`}
+          <p class="dim" style="margin:0 0 6px">${esc(q.text || "Paint your square!")} ${painting ? "" : "It opens on the screen in a moment."}</p>
+          <div class="mapw" id="mapw"><canvas id="map" width="${q.cols * 4}" height="${q.rows * 4}"></canvas><i class="me" id="meBox"></i></div>
+          <div class="grid4" id="g4" style="--ar:1">${Array.from({ length: 16 }, (_, i) => `<i data-c="${i}"></i>`).join("")}</div>
+          <div class="pal" id="pal">${pal.map((c, i) => `<button data-p="${i + 1}" style="background:${c}"></button>`).join("")}<button data-p="0" class="er" title="Eraser"></button></div>
+          <p class="note">${painting ? "Your square (blinking on the map) is on the wall: paint it with your neighbours!" : "Your square blinks on the map."}</p>`)) {
+        pick = pick || 1;
+        const g4 = $("#g4");
+        const paint = e => {
+          if (!S || S.phase !== "question") return;
+          const t = document.elementFromPoint(e.touches ? e.touches[0].clientX : e.clientX, e.touches ? e.touches[0].clientY : e.clientY);
+          if (!t || t.dataset.c == null || t.parentNode !== g4) return;
+          pix[q.id][+t.dataset.c] = pick; drawGrid(); sendPix(false);
+          clearTimeout(pxSent.timer); pxSent.timer = setTimeout(() => sendPix(true), 2050);
+        };
+        g4.addEventListener("pointerdown", e => { e.preventDefault(); paint(e); g4.onpointermove = ev => paint(ev); });
+        window.addEventListener("pointerup", () => { g4.onpointermove = null; });
+        g4.addEventListener("touchmove", e => { e.preventDefault(); paint(e); }, { passive: false });
+        main.querySelectorAll("[data-p]").forEach(x => x.onclick = () => { pick = +x.dataset.p; main.querySelectorAll("[data-p]").forEach(y => y.classList.toggle("on", y === x)); });
+        const on = main.querySelector(`[data-p="${pick}"]`); if (on) on.classList.add("on");
+        drawGrid(); drawMap();
+      }
+      if (ph === "question") countdown(q);
+      return;
+    }
+    if (ph === "locked") { sendPix(true); return screen(`mo-l:${q.id}`, `<div class="center card"><p class="big">Pens down!</p><p class="dim">Look at the wall.</p></div>`); }
+    if (ph === "reveal") return screen(`mo-r:${q.id}`, `<div class="center card"><p class="big">Look at the wall!</p><p class="dim">The crowd's mosaic.</p>
+      <div class="mapw"><canvas id="map" width="${q.cols * 4}" height="${q.rows * 4}"></canvas><i class="me" id="meBox"></i></div></div>`), drawMap();
+  }
+  let pick = 1;
+  function drawGrid() {
+    const q = S && S.q; if (!q || q.type !== "mosaic") return;
+    const g4 = $("#g4"); if (!g4) return;
+    const pal = q.palette || [], p = pix[q.id] || [];
+    g4.querySelectorAll("i").forEach((c, i) => { c.style.background = p[i] ? pal[p[i] - 1] : ""; });
+  }
+  function drawMap() {
+    const q = S && S.q, cv = $("#map"); if (!q || q.type !== "mosaic" || !cv) return;
+    const ctx = cv.getContext("2d"), pal = q.palette || [], W = q.cols * 4, H = q.rows * 4, img = ctx.createImageData(W, H);
+    const data = mosaic && mosaic.r === q.id ? mosaic.data : "";
+    for (let b = 0; b < q.cols * q.rows; b++) for (let i = 0; i < 16; i++) {
+      let v = data ? parseInt(data[b * 16 + i] || "0", 16) : 0;
+      if (b === myBlock() && pix[q.id]) v = pix[q.id][i];
+      const hx = v ? pal[v - 1] : "#1b2433", n = parseInt(hx.slice(1), 16), x = (b % q.cols) * 4 + (i % 4), y = Math.floor(b / q.cols) * 4 + Math.floor(i / 4), o = (y * W + x) * 4;
+      img.data[o] = n >> 16 & 255; img.data[o + 1] = n >> 8 & 255; img.data[o + 2] = n & 255; img.data[o + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    const box = $("#meBox"), b = myBlock();
+    if (box && b != null) { Object.assign(box.style, { left: (b % q.cols) / q.cols * 100 + "%", top: Math.floor(b / q.cols) / q.rows * 100 + "%", width: 100 / q.cols + "%", height: 100 / q.rows + "%" }); }
+  }
+  setInterval(() => { if (!joined && wantJoin && S && S.phase !== "closed") render(); }, 2000);
+})();
+</script>
+</body>
+</html>
