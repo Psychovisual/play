@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
 <meta name="theme-color" content="#061436">
 <meta name="robots" content="noindex">
-<meta name="pgfx-phone" content="2">
+<meta name="pgfx-phone" content="3">
 <title>Play</title>
-<!-- Picturall GFX phone page (6.2.4). One file, no external resources: put it on any static web host (GitHub Pages,
+<!-- Picturall GFX phone page (6.2.5). One file, no external resources: put it on any static web host (GitHub Pages,
      Netlify, Cloudflare Pages...). Everything it needs comes in the address of the QR code: room, token, Ably host,
-     and the side of the room (the totem the code was scanned on). -->
+     and, in a Left vs Right quiz, the team of the totem the code was scanned on. Games: quiz (rounds) and crowd mosaic. -->
 <style>
 :root{--bg:#061436;--bg2:#0B2A6B;--accent:#00C8FF;--text:#fff;--dim:rgba(255,255,255,.66);--line:rgba(255,255,255,.14);--ok:#2FB37A;--bad:#E5484D;--left:#3A7BE0;--right:#E5484D}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -84,10 +84,23 @@ button{font:inherit;border:0;border-radius:14px;cursor:pointer;color:#fff}
 .pal button{width:34px;height:34px;border-radius:50%;box-shadow:inset 0 0 0 2px rgba(255,255,255,.35)}
 .pal button.on{outline:3px solid #fff;outline-offset:2px}
 .pal button.er{background:repeating-linear-gradient(45deg,#333 0 6px,#555 6px 12px)}
+/* teams (quiz Left vs Right) */
+.tpick{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.tbtn{padding:18px 8px;font-size:20px;font-weight:900;text-transform:uppercase;border-radius:14px;opacity:.45;box-shadow:inset 0 -5px 0 rgba(0,0,0,.25)}
+.tbtn.l{background:var(--left)}.tbtn.r{background:var(--right)}.tbtn.on{opacity:1;outline:4px solid #fff;outline-offset:2px}
+.tcard{border-radius:16px;padding:16px;margin:12px 0 4px;font-size:26px;font-weight:900;text-transform:uppercase;text-align:center}
+.tcard.l{background:var(--left)}.tcard.r{background:var(--right)}
+.link{background:none;color:var(--accent);font-size:15px;font-weight:700;padding:8px;margin-top:6px;text-decoration:underline}
+.tstrip{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0 4px}
+.tstrip div{border-radius:12px;padding:10px;text-align:center;font-size:13px}.tstrip b{display:block;font-size:17px;text-transform:uppercase}.tstrip i{display:block;font-style:normal;font-size:22px;font-weight:900}
+.tstrip .l{background:var(--left)}.tstrip .r{background:var(--right)}.tstrip .trail{opacity:.55}
+#lost{display:none;margin:0 18px;padding:8px 12px;border-radius:10px;background:rgba(229,72,77,.25);color:#FFB3B5;font-size:13px;text-align:center}
+#lost.on{display:block}
 </style>
 </head>
 <body>
 <header><span id="dot"></span><h1 id="title">Loading</h1><span id="me"></span></header>
+<div id="lost">Lost the link to the game: reconnecting</div>
 <main id="main"><div class="center"><div class="spin"></div><p class="dim">Connecting</p></div></main>
 <script>
 "use strict";
@@ -101,49 +114,60 @@ button{font:inherit;border:0;border-radius:14px;cursor:pointer;color:#fff}
   const store = (() => { try { return JSON.parse(localStorage.getItem("pgfx:" + room) || "{}"); } catch (e) { return {}; } })();
   const save = () => { try { localStorage.setItem("pgfx:" + room, JSON.stringify(store)); } catch (e) {} };
   if (!store.id) { const a = new Uint8Array(8); crypto.getRandomValues(a); store.id = "p" + Array.from(a, b => (b % 36).toString(36)).join(""); save(); }
-  if (!store.side && /^[LR]$/.test(H.get("s") || "")) { store.side = H.get("s"); save(); }      // the totem scanned first decides
+  const hint = /^[LR]$/.test(H.get("s") || "") ? H.get("s") : "";        // Left vs Right: the totem this code was scanned on
   const ID = store.id, shard = `pgfx:${room}:in${[...ID].reduce((s, c) => s + c.charCodeAt(0), 0) % 8}`;
-  let S = null, offset = 0, joined = false, joinSent = 0, full = false, gone = false, expired = false, wantJoin = !!store.joinedRoom;
-  const sent = {};                 // answer key -> {a, acked}
+  let S = null, offset = 0, lastRecv = 0, full = false, expired = false, old = false, lost = false;
+  let joinedGid = "", joining = 0, pickSide = hint;
+  let sent = {};                   // answer key -> {a, acked}
   let ws = null, es = null, view = "", tick = null;
   const imgs = {};                 // spot round id -> {src, w, h}
-  let mosaic = null;               // {r, cols, rows, data}
-  const pix = {};                  // mosaic round id -> 16 palette indices of my square
-  let taps = { r: null, n: 0, sent: 0 }, pxSent = { r: null, s: "", at: 0, timer: null }, spotGuess = {};
+  let mosaic = null;               // {r, cols, rows, data}: the last mosaic sent by the game
+  let pix = {}, pixAt = {};        // mosaic id -> my 16 palette indices, and the square they belong to
+  let taps = { r: null, n: 0, sent: 0 }, pxSent = { s: "", at: 0, timer: null }, spotGuess = {};
 
   if (!room) { main.innerHTML = `<div class="center card"><p class="big">Scan the code</p><p class="dim">Open this page by scanning the QR code on the screen.</p></div>`; $("#title").textContent = "Play"; return; }
 
+  // ---------------------------------------------------------------- a game session (each Start / Kick everyone is a new one)
+  const meRow = () => (S && S.me && S.me[ID]) || null;
+  const isJoined = () => !!S && !!S.gid && (!!meRow() || joinedGid === S.gid);
+  const isKicked = () => !!S && (S.kicked || []).includes(ID);
+  function newGame() {             // another game started: join again (name, team), nothing carries over
+    joinedGid = ""; joining = 0; full = false; sent = {}; pix = {}; pixAt = {}; spotGuess = {}; mosaic = null;
+    taps = { r: null, n: 0, sent: 0 }; pxSent = { s: "", at: 0, timer: null }; pickSide = hint || pickSide;
+  }
+
   // ---------------------------------------------------------------- transport
   function setDot(st) { $("#dot").className = st; }
-  function onMsg(name, data) {
+  function onMsg(name, data, fromHistory) {
     if (!data || typeof data !== "object") return;
     if (name === "state") {
-      if (S && data.now && S.now && data.now < S.now) return;          // an older state arriving late
+      if (S && data.now && S.now && data.now < S.now && data.gid === S.gid) return;      // an older state arriving late
       const prev = S;
+      if (prev && prev.gid !== data.gid) newGame();
       S = data; offset = (data.now || Date.now()) - Date.now();
-      const me = (data.me || {})[ID];
-      if (me) { joined = true; if (me[4] && me[4] !== store.side) { store.side = me[4]; save(); } }
-      if ((data.kicked || []).includes(ID)) gone = true;
-      if (me && data.q && me[3] >= 0 && sent[data.q.key]) sent[data.q.key].acked = true;
+      old = !!fromHistory && data.phase !== "closed" && data.now && Date.now() - data.now > 90000;   // nobody runs this game any more
+      if (!fromHistory) { lastRecv = Date.now(); lost = false; }
+      const m = meRow();
+      if (m) joinedGid = data.gid;
+      if (m && data.q && m[3] >= 0 && sent[data.q.key]) sent[data.q.key].acked = true;
       applyLook(data.look);
       if (data.q && data.q.type === "spot" && !imgs[data.q.id] && data.q.img) publish({ t: "img", id: ID, r: data.q.id });
       if (prev && prev.phase === "question" && data.phase !== "question") flushInput();
       render();
-      if (!joined && wantJoin && data.phase !== "closed") join();
     } else if (name === "joined") {
-      if ((data.ok || []).some(x => x[0] === ID)) { joined = true; full = false; const x = data.ok.find(x => x[0] === ID); store.nick = x[1]; if (x[2]) store.side = x[2]; store.joinedRoom = room; save(); render(); }
-      if ((data.full || []).includes(ID)) { full = true; render(); }
+      const x = (data.ok || []).find(x => x[0] === ID);
+      if (x && S) { joinedGid = S.gid; joining = 0; full = false; store.nick = x[1]; if (x[2] && teamsOn()) pickSide = x[2]; save(); render(); }
+      if ((data.full || []).includes(ID)) { full = true; joining = 0; render(); }
     } else if (name === "acks") {
       if ((data.ids || []).includes(ID) && sent[data.q]) { sent[data.q].acked = true; render(); }
     } else if (name === "img") {
       imgs[data.r] = data; if (S && S.q && S.q.id === data.r) { view = ""; render(); }
     } else if (name === "mosaic") {
-      mosaic = data; drawMap();
-      const b = myBlock();
-      if (b != null && !pix[data.r] && data.data) { const s = data.data.substr(b * 16, 16); if (/[1-9a-f]/.test(s)) { pix[data.r] = [...s].map(c => parseInt(c, 16)); drawGrid(); } }
+      mosaic = data; loadMine(); drawMap();
     }
   }
   async function publish(obj, tries = 3) {
+    if (S && S.gid && obj.g == null) obj.g = S.gid;
     if (local) { if (ws && ws.readyState === 1) { ws.send(JSON.stringify({ t: "aud_in", data: obj })); return true; } return false; }
     for (let i = 0; i < tries; i++) {
       try {
@@ -164,9 +188,9 @@ button{font:inherit;border:0;border-radius:14px;cursor:pointer;color:#fff}
       if (r.status === 401) { expired = true; render(); return; }
       const list = await r.json();
       const m = (list || []).find(x => x.name === "state");
-      if (m) onMsg("state", decode(m));
+      if (m) onMsg("state", decode(m), true);
       const mz = (list || []).find(x => x.name === "mosaic");
-      if (mz) onMsg("mosaic", decode(mz));
+      if (mz) onMsg("mosaic", decode(mz), true);
     } catch (e) {}
   }
   function decode(env) {
@@ -196,15 +220,25 @@ button{font:inherit;border:0;border-radius:14px;cursor:pointer;color:#fff}
     if (local) { if (!ws || ws.readyState > 1) connectLocal(); } else { if (!es || es.readyState === 2) connectAbly(); else latest(); }
   });
   local ? connectLocal() : connectAbly();
+  // the game sends its state every 20 s while it runs: a long silence means the link is lost
+  setInterval(() => {
+    const was = lost;
+    lost = !!S && S.phase !== "closed" && !!lastRecv && Date.now() - lastRecv > 65000;
+    $("#lost").classList.toggle("on", lost);
+    if (lost) latest();
+    if (lost !== was) render();
+    if (joining && !isJoined() && Date.now() - joining > 9000) { joining = 0; render(); }
+  }, 3000);
 
   // ---------------------------------------------------------------- actions
-  function join(nick) {
+  function join(nick, side) {
     if (nick != null) { store.nick = nick; save(); }
-    wantJoin = true; joinSent = Date.now();
+    if (side) pickSide = side;
+    joining = Date.now();
     const m = { t: "join", id: ID, nick: store.nick || "" };
-    if (store.side) m.side = store.side;
+    if (side) m.side = side;
     publish(m);
-    setTimeout(() => { if (!joined && !full && Date.now() - joinSent >= 4000 && S && S.phase !== "closed") join(); }, 4500);
+    setTimeout(() => { if (joining && !isJoined() && S && S.phase !== "closed") publish({ ...m }); }, 4000);
     render();
   }
   function answer(q, a) {
@@ -229,20 +263,35 @@ button{font:inherit;border:0;border-radius:14px;cursor:pointer;color:#fff}
   }
   // taps and drawings are batched: one message every 2 s at most (the free Ably account counts every message)
   setInterval(() => {
-    if (!S || S.phase !== "question" || !S.q) return;
-    if (S.q.type === "lvr" && taps.r === S.q.id && taps.n !== taps.sent) { taps.sent = taps.n; publish({ t: "tap", id: ID, r: taps.r, n: taps.n }, 1); }
-    if (S.q.type === "mosaic") sendPix(false);
+    if (!S) return;
+    if (S.phase === "question" && S.q && S.q.type === "lvr" && taps.r === S.q.id && taps.n !== taps.sent) { taps.sent = taps.n; publish({ t: "tap", id: ID, r: taps.r, n: taps.n }, 1); }
+    sendPix(false);
   }, 2000);
   function flushInput() {
     if (taps.r && taps.n !== taps.sent) { taps.sent = taps.n; publish({ t: "tap", id: ID, r: taps.r, n: taps.n }); }
   }
+  // the mosaic on this phone: a quiz round's, or the Crowd mosaic game's
+  function mzc() {
+    if (!S) return null;
+    if (S.game === "mosaic" && S.mz) return { id: "game", cols: S.mz.cols, rows: S.mz.rows, palette: S.mz.palette || [], text: S.mz.text, can: S.phase === "paint" };
+    if (S.q && S.q.type === "mosaic") return { id: S.q.id, cols: S.q.cols, rows: S.q.rows, palette: S.q.palette || [], text: S.q.text, can: S.phase === "question" };
+    return null;
+  }
   function sendPix(now) {
-    const q = S && S.q; if (!q || q.type !== "mosaic" || S.phase !== "question") return;
-    const s = (pix[q.id] || []).map(v => v.toString(16)).join("");
+    const c = mzc(); if (!c || !c.can || myBlock() == null) return;
+    const s = (pix[c.id] || []).map(v => v.toString(16)).join("");
     if (s.length !== 16 || s === pxSent.s) return;
     if (!now && Date.now() - pxSent.at < 1900) return;
     pxSent = { ...pxSent, s, at: Date.now() };
-    publish({ t: "px", id: ID, r: q.id, b: s }, 1);
+    publish({ t: "px", id: ID, r: c.id, b: s }, 1);
+  }
+  function loadMine() {            // my square as the game has it (after a reload, or a new square)
+    const c = mzc(), b = myBlock(); if (!c || b == null) return;
+    if (pixAt[c.id] === b && pix[c.id]) return;
+    const d = mosaic && mosaic.r === c.id && mosaic.data ? mosaic.data.substr(b * 16, 16) : "";
+    pix[c.id] = d.length === 16 ? [...d].map(ch => parseInt(ch, 16)) : Array(16).fill(0);
+    pixAt[c.id] = b; pxSent.s = pix[c.id].map(v => v.toString(16)).join("");
+    drawGrid();
   }
   function applyLook(L) {
     if (!L) return;
@@ -253,8 +302,9 @@ button{font:inherit;border:0;border-radius:14px;cursor:pointer;color:#fff}
   // ---------------------------------------------------------------- screens
   const LET = "ABCDEF";
   const colors = () => (S && S.look && S.look.colors) || ["#E5484D", "#3A7BE0", "#F0B429", "#2FB37A", "#A35BE0", "#EF7D2D"];
-  const me = () => (S && S.me && S.me[ID]) || null;
-  const mySide = () => (me() && me()[4]) || store.side || "";
+  const teamsOn = () => !!(S && S.teams && S.teams.mode === "lvr");
+  const teamName = sd => (S && S.teams && S.teams[sd]) || (sd === "R" ? "Right" : "Left");
+  const mySide = () => (meRow() && meRow()[4]) || pickSide || "";
   const myBlock = () => S && S.blocks && S.blocks[ID] != null ? S.blocks[ID] : null;
   function screen(key, html) { if (view !== key) { main.innerHTML = html; view = key; return true; } return false; }
   function countdown(q) {
@@ -266,38 +316,63 @@ button{font:inherit;border:0;border-radius:14px;cursor:pointer;color:#fff}
     t(); tick = setInterval(t, 200);
   }
   const qhead = (q, extra = "") => `<div class="qhd"><span>Round ${q.n} / ${q.total}${extra}</span><span id="left"></span></div><div class="bar"><i id="bar"></i></div>`;
+  const msg = (key, big, small) => screen(key, `<div class="center card"><p class="big">${big}</p>${small ? `<p class="dim">${small}</p>` : ""}</div>`);
   function render() {
     clearInterval(tick); tick = null;
     $("#title").textContent = (S && S.title) || "Play";
-    const m = me();
+    const m = meRow(), joined = isJoined();
     $("#me").textContent = joined && store.nick ? store.nick + (m && m[0] ? ` · ${m[0]} pts` : "") : "";
-    if (expired) return screen("expired", `<div class="center card"><p class="big">This code has expired</p><p class="dim">Scan the code on the screen again.</p></div>`);
-    if (gone) return screen("gone", `<div class="center card"><p class="big">You have been removed from the game</p></div>`);
-    if (full && !joined) return screen("full", `<div class="center card"><p class="big">Sorry, the room is full</p><p class="dim">Enjoy the show on the screen.</p></div>`);
+    if (expired) return msg("expired", "This code has expired", "Scan the code on the screen again.");
     if (!S) return screen("wait0", `<div class="center"><div class="spin"></div><p class="dim">Connecting</p></div>`);
+    if (S.moved) return msg("moved", "This game has a new QR code", "Scan the code on the screen again.");
+    if (old) return msg("old", "This game is not running", "When it starts, scan the QR code on the screen.");
+    if (isKicked()) return msg("gone", "You have been removed from the game");
     const ph = S.phase;
-    if (ph === "closed") return screen("closed", joined || store.joinedRoom ? `<div class="center card"><p class="big">Thanks for playing!</p><p class="dim">The game is closed.</p></div>`
-      : `<div class="center card"><p class="big">The game has not started yet</p><p class="dim">Keep this page open: it starts by itself.</p></div>`);
-    if (!joined) {
-      if (wantJoin && Date.now() - joinSent < 8000) return screen("joining", `<div class="center"><div class="spin"></div><p class="dim">Joining</p></div>`);
-      if (screen("join", `<div class="center card"><p class="big">${esc(S.title)}</p>${S.nick ? `<p class="dim">Choose a name for the screen</p>
-          <input id="nick" maxlength="16" autocomplete="nickname" placeholder="Your name" value="${esc(store.nick || "")}">` : `<p class="dim">Tap to join the game.</p>`}
-          <button class="go" id="join">Join</button><p class="note">No account, no personal data: just a name for the scores.</p></div>`)) {
-        const go = () => { const v = S.nick ? $("#nick").value.trim() : ""; if (S.nick && !v) { $("#nick").focus(); return; } join(v); };
-        $("#join").onclick = go;
-        if ($("#nick")) $("#nick").onkeydown = e => { if (e.key === "Enter") go(); };
-      }
-      return;
-    }
-    if (ph === "lobby") return screen("lobby:" + store.nick, `<div class="center card"><p class="big">You're in${store.nick ? ", " + esc(store.nick) : ""}!</p><p class="dim">Look at the screen: the game is about to start.</p></div>`);
+    if (ph === "closed") return msg("closed:" + joined, joined ? "Thanks for playing!" : "The game has not started yet", joined ? "The game is over." : "Keep this page open: it starts by itself.");
+    if (full && !joined) return msg("full", "Sorry, the room is full", "Enjoy the show on the screen.");
+    if (!joined) return joinScreen();
+    if (S.game === "mosaic") return rMosaicGame(ph);
+    if (ph === "lobby") return lobbyScreen();
     if (ph === "board" || ph === "end") {
       const rows = (S.board || []).map(r => `<div class="row ${m && r[0] === m[1] && r[1] === store.nick ? "me" : ""}"><b>${r[0]}</b><span>${esc(r[1])}</span><i>${r[2]}</i></div>`).join("");
-      return screen(`${ph}:${m && m[0]}:${m && m[1]}`, `<div class="center card"><p class="mid">${ph === "end" ? "Final scores" : "Scores"}</p>
-        ${m ? `<p class="big">#${m[1]} · ${m[0]} pts</p>` : ""}<div class="rows">${rows}</div>${ph === "end" ? `<p class="note">Thanks for playing!</p>` : ""}</div>`);
+      return screen(`${ph}:${m && m[0]}:${m && m[1]}:${JSON.stringify(S.teamScores || "")}`, `<div class="center card"><p class="mid">${ph === "end" ? "Final scores" : "Scores"}</p>
+        ${m ? `<p class="big">#${m[1]} · ${m[0]} pts</p>` : ""}${teamStrip()}<div class="rows">${rows}</div>${ph === "end" ? `<p class="note">Thanks for playing!</p>` : ""}</div>`);
     }
     const q = S.q;
     if (!q) return screen("other", `<div class="center"><div class="spin"></div></div>`);
     ({ quiz: rQuiz, poll: rQuiz, hilo: rHilo, lvr: rLvr, spot: rSpot, mosaic: rMosaic }[q.type] || rQuiz)(ph, q, m);
+  }
+  function teamStrip() {
+    const t = S.teamScores; if (!teamsOn() || !t) return "";
+    const lead = t.L.avg === t.R.avg ? "" : t.L.avg > t.R.avg ? "L" : "R";
+    return `<div class="tstrip">${["L", "R"].map(sd => `<div class="${sd === "L" ? "l" : "r"} ${lead && lead !== sd ? "trail" : ""}"><b>${esc(teamName(sd))}</b><i>${t[sd].avg}</i>points per player</div>`).join("")}</div>`;
+  }
+  function joinScreen() {
+    if (joining && Date.now() - joining < 9000) return screen("joining", `<div class="center"><div class="spin"></div><p class="dim">Joining</p></div>`);
+    const mz = S.game === "mosaic", teams = !mz && teamsOn();
+    const key = `join:${S.gid}:${teams}:${pickSide}:${S.nick}`;
+    if (screen(key, `<div class="center card"><p class="big">${esc(S.title)}</p>${mz && S.mz && S.mz.text ? `<p class="dim">${esc(S.mz.text)}</p>` : ""}
+        ${S.nick ? `<p class="dim">Choose a name for the screen</p><input id="nick" maxlength="16" autocomplete="nickname" placeholder="Your name" value="${esc(store.nick || "")}">` : ""}
+        ${teams ? `<p class="dim" style="margin:14px 0 0">Pick your team</p><div class="tpick">${["L", "R"].map(sd => `<button class="tbtn ${sd === "L" ? "l" : "r"} ${pickSide === sd ? "on" : ""}" data-side="${sd}">${esc(teamName(sd))}</button>`).join("")}</div>` : ""}
+        <button class="go" id="join" ${teams && !pickSide ? "disabled" : ""}>${mz ? "Start painting" : "Join"}</button>
+        <p class="note">No account, no personal data${S.nick ? ": just a name for the screen" : ""}.</p></div>`)) {
+      const go = () => { const v = S.nick ? $("#nick").value.trim() : ""; if (S.nick && !v) { $("#nick").focus(); return; } if (teams && !pickSide) return; join(v, teams ? pickSide : ""); };
+      $("#join").onclick = go;
+      if ($("#nick")) $("#nick").onkeydown = e => { if (e.key === "Enter") go(); };
+      main.querySelectorAll("[data-side]").forEach(b => b.onclick = () => {
+        pickSide = b.dataset.side; const n = $("#nick") ? $("#nick").value : null; if (n != null) store.nick = n;
+        view = ""; render();
+      });
+    }
+  }
+  function lobbyScreen() {
+    if (!teamsOn()) return msg("lobby:" + store.nick, `You're in${store.nick ? ", " + esc(store.nick) : ""}!`, "Look at the screen: the game is about to start.");
+    const sd = mySide() || "L", other = sd === "L" ? "R" : "L";
+    if (screen(`lobby-t:${store.nick}:${sd}`, `<div class="center card"><p class="big">You're in${store.nick ? ", " + esc(store.nick) : ""}!</p><p class="dim">You play for</p>
+        <div class="tcard ${sd === "L" ? "l" : "r"}">${esc(teamName(sd))}</div><button class="link" id="sw">Switch to ${esc(teamName(other))}</button>
+        <p class="note">Look at the screen: the game is about to start.</p></div>`)) {
+      $("#sw").onclick = () => { pickSide = other; join(null, other); };
+    }
   }
 
   function rQuiz(ph, q, m) {
@@ -330,7 +405,7 @@ button{font:inherit;border:0;border-radius:14px;cursor:pointer;color:#fff}
     const cur = `<div class="hcur"><b>${esc(q.cur.name)}</b><i>${esc(q.cur.value)} ${esc(q.unit || "")}</i></div>`;
     if (ph === "intro") return screen(`hi-intro:${q.id}`, `<div class="center card"><p class="mid">${esc(q.title || "Higher or lower")}</p><p class="dim">${esc(q.text)}</p>${cur}
       <p class="note">${q.elim ? "A wrong guess and you are out: last ones standing win." : "Every right guess scores."}</p></div>`);
-    if (out && ph !== "reveal") return screen(`hi-out:${q.id}`, `<div class="center card"><p class="big">You're out!</p><p class="dim">Watch who stays in until the end.</p></div>`);
+    if (out && ph !== "reveal") return msg(`hi-out:${q.id}`, "You're out!", "Watch who stays in until the end.");
     if (ph === "question") {
       const done = myAns >= 0;
       if (screen(`hi-q:${q.key}:${myAns}:${mine && mine.acked}`, `${qhead(q, ` · ${q.step + 1} of ${q.steps}`)}${cur}
@@ -342,7 +417,7 @@ button{font:inherit;border:0;border-radius:14px;cursor:pointer;color:#fff}
       }
       return countdown(q);
     }
-    if (ph === "locked") return screen(`hi-l:${q.key}:${myAns}`, `<div class="center card"><p class="big">Time's up!</p><p class="dim">${myAns === 0 ? "You said higher" : myAns === 1 ? "You said lower" : "No answer"}</p></div>`);
+    if (ph === "locked") return msg(`hi-l:${q.key}:${myAns}`, "Time's up!", myAns === 0 ? "You said higher" : myAns === 1 ? "You said lower" : "No answer");
     if (ph === "reveal") {
       const right = S.correct === "same" ? myAns >= 0 : (S.correct === "higher" && myAns === 0) || (S.correct === "lower" && myAns === 1), pts = m ? m[2] : 0;
       return screen(`hi-r:${q.key}:${out}:${pts}`, `<div class="center card"><p class="mid">${esc(q.nxt.name)}: ${esc(q.nxt.value || "")} ${esc(q.unit || "")}</p>
@@ -367,7 +442,7 @@ button{font:inherit;border:0;border-radius:14px;cursor:pointer;color:#fff}
       $("#tn") && ($("#tn").textContent = taps.n);
       return countdown(q);
     }
-    if (ph === "locked") return screen(`lv-l:${q.id}`, `<div class="center card"><p class="big">STOP!</p><p class="dim">You tapped ${taps.r === q.id ? taps.n : 0} times for ${esc(name)}.</p></div>`);
+    if (ph === "locked") return msg(`lv-l:${q.id}`, "STOP!", `You tapped ${taps.r === q.id ? taps.n : 0} times for ${esc(name)}.`);
     if (ph === "reveal") {
       const w = q.winner, win = w && w === side, pts = m ? m[2] : 0;
       return screen(`lv-r:${q.id}:${w}`, `<div class="center card"><p class="big">${w ? "Winner: " + esc(w === "L" ? q.leftName : q.rightName) : "A draw!"}</p>
@@ -404,63 +479,73 @@ button{font:inherit;border:0;border-radius:14px;cursor:pointer;color:#fff}
     }
   }
 
+  // ---------------------------------------------------------------- mosaic: a quiz round, or the Crowd mosaic game
+  let pick = 1;
+  function painter(key, head, note) {
+    const c = mzc();
+    if (screen(key, `${head}<div class="mapw" id="mapw"><canvas id="map" width="${c.cols * 4}" height="${c.rows * 4}"></canvas><i class="me" id="meBox"></i></div>
+        <div class="grid4" id="g4" style="--ar:1">${Array.from({ length: 16 }, (_, i) => `<i data-c="${i}"></i>`).join("")}</div>
+        <div class="pal" id="pal">${c.palette.map((col, i) => `<button data-p="${i + 1}" style="background:${col}"></button>`).join("")}<button data-p="0" class="er" title="Eraser"></button></div>
+        <p class="note">${note}</p>`)) {
+      const g4 = $("#g4");
+      const paint = e => {
+        const cc = mzc(); if (!cc || !cc.can) return;
+        const t = document.elementFromPoint(e.touches ? e.touches[0].clientX : e.clientX, e.touches ? e.touches[0].clientY : e.clientY);
+        if (!t || t.dataset.c == null || t.parentNode !== g4) return;
+        if (!pix[cc.id]) pix[cc.id] = Array(16).fill(0);
+        pix[cc.id][+t.dataset.c] = pick; drawGrid(); drawMap(); sendPix(false);
+        clearTimeout(pxSent.timer); pxSent.timer = setTimeout(() => sendPix(true), 2050);
+      };
+      g4.addEventListener("pointerdown", e => { e.preventDefault(); paint(e); g4.onpointermove = ev => paint(ev); });
+      window.addEventListener("pointerup", () => { g4.onpointermove = null; });
+      g4.addEventListener("touchmove", e => { e.preventDefault(); paint(e); }, { passive: false });
+      main.querySelectorAll("[data-p]").forEach(x => x.onclick = () => { pick = +x.dataset.p; main.querySelectorAll("[data-p]").forEach(y => y.classList.toggle("on", y === x)); });
+      const on = main.querySelector(`[data-p="${pick}"]`); if (on) on.classList.add("on");
+    }
+    loadMine(); drawGrid(); drawMap();
+  }
   function rMosaic(ph, q, m) {
-    const b = myBlock(), pal = q.palette || [];
-    if (b == null) return screen(`mo-none:${q.id}:${ph}`, `<div class="center card"><p class="big">${ph === "reveal" ? "Look at the screen!" : "The mosaic is full"}</p><p class="dim">${ph === "reveal" ? "The crowd's mosaic is on the wall." : "Every square already has a painter: watch the wall, you'll play the next round."}</p></div>`);
-    if (!pix[q.id]) pix[q.id] = Array(16).fill(0);
+    const b = myBlock();
+    if (b == null) return msg(`mo-none:${q.id}:${ph}`, ph === "reveal" ? "Look at the screen!" : "The mosaic is full", ph === "reveal" ? "The crowd's mosaic is on the wall." : "Every square already has a painter: watch the wall, you'll play the next round.");
     if (ph === "intro" || ph === "question") {
       const painting = ph === "question";
-      if (screen(`mo:${q.id}:${ph}`, `${painting ? qhead(q) : `<p class="mid" style="margin-top:6px">${esc(q.title || "Crowd mosaic")}</p>`}
-          <p class="dim" style="margin:0 0 6px">${esc(q.text || "Paint your square!")} ${painting ? "" : "It opens on the screen in a moment."}</p>
-          <div class="mapw" id="mapw"><canvas id="map" width="${q.cols * 4}" height="${q.rows * 4}"></canvas><i class="me" id="meBox"></i></div>
-          <div class="grid4" id="g4" style="--ar:1">${Array.from({ length: 16 }, (_, i) => `<i data-c="${i}"></i>`).join("")}</div>
-          <div class="pal" id="pal">${pal.map((c, i) => `<button data-p="${i + 1}" style="background:${c}"></button>`).join("")}<button data-p="0" class="er" title="Eraser"></button></div>
-          <p class="note">${painting ? "Your square (blinking on the map) is on the wall: paint it with your neighbours!" : "Your square blinks on the map."}</p>`)) {
-        pick = pick || 1;
-        const g4 = $("#g4");
-        const paint = e => {
-          if (!S || S.phase !== "question") return;
-          const t = document.elementFromPoint(e.touches ? e.touches[0].clientX : e.clientX, e.touches ? e.touches[0].clientY : e.clientY);
-          if (!t || t.dataset.c == null || t.parentNode !== g4) return;
-          pix[q.id][+t.dataset.c] = pick; drawGrid(); sendPix(false);
-          clearTimeout(pxSent.timer); pxSent.timer = setTimeout(() => sendPix(true), 2050);
-        };
-        g4.addEventListener("pointerdown", e => { e.preventDefault(); paint(e); g4.onpointermove = ev => paint(ev); });
-        window.addEventListener("pointerup", () => { g4.onpointermove = null; });
-        g4.addEventListener("touchmove", e => { e.preventDefault(); paint(e); }, { passive: false });
-        main.querySelectorAll("[data-p]").forEach(x => x.onclick = () => { pick = +x.dataset.p; main.querySelectorAll("[data-p]").forEach(y => y.classList.toggle("on", y === x)); });
-        const on = main.querySelector(`[data-p="${pick}"]`); if (on) on.classList.add("on");
-        drawGrid(); drawMap();
-      }
-      if (ph === "question") countdown(q);
+      painter(`mo:${q.id}:${ph}:${b}`, `${painting ? qhead(q) : `<p class="mid" style="margin-top:6px">${esc(q.title || "Crowd mosaic")}</p>`}
+        <p class="dim" style="margin:0 0 6px">${esc(q.text || "Paint your square!")} ${painting ? "" : "It opens on the screen in a moment."}</p>`,
+        painting ? "Your square (blinking on the map) is on the wall: paint it with your neighbours!" : "Your square blinks on the map.");
+      if (painting) countdown(q);
       return;
     }
-    if (ph === "locked") { sendPix(true); return screen(`mo-l:${q.id}`, `<div class="center card"><p class="big">Pens down!</p><p class="dim">Look at the wall.</p></div>`); }
-    if (ph === "reveal") return screen(`mo-r:${q.id}`, `<div class="center card"><p class="big">Look at the wall!</p><p class="dim">The crowd's mosaic.</p>
-      <div class="mapw"><canvas id="map" width="${q.cols * 4}" height="${q.rows * 4}"></canvas><i class="me" id="meBox"></i></div></div>`), drawMap();
+    if (ph === "locked") { sendPix(true); return msg(`mo-l:${q.id}`, "Pens down!", "Look at the wall."); }
+    if (ph === "reveal") { screen(`mo-r:${q.id}`, `<div class="center card"><p class="big">Look at the wall!</p><p class="dim">The crowd's mosaic.</p>
+      <div class="mapw"><canvas id="map" width="${q.cols * 4}" height="${q.rows * 4}"></canvas><i class="me" id="meBox"></i></div></div>`); drawMap(); }
   }
-  let pick = 1;
+  function rMosaicGame(ph) {
+    const c = mzc(), b = myBlock();
+    if (!c) return screen("mz-wait", `<div class="center"><div class="spin"></div></div>`);
+    if (b == null) return msg(`mz-q:${S.mz.waiting}`, "Every square is taken", `You're in the queue (${S.mz.waiting} waiting): you get a square as soon as one frees up. Keep this page open.`);
+    painter(`mz:${ph}:${b}`, `<p class="mid" style="margin-top:6px">${ph === "pause" ? "Paused" : esc(c.text || "Paint your square!")}</p>`,
+      ph === "pause" ? "The painting is paused: look at the wall." : "Your square blinks on the map: it is on the wall. Paint it with your neighbours!");
+  }
   function drawGrid() {
-    const q = S && S.q; if (!q || q.type !== "mosaic") return;
-    const g4 = $("#g4"); if (!g4) return;
-    const pal = q.palette || [], p = pix[q.id] || [];
-    g4.querySelectorAll("i").forEach((c, i) => { c.style.background = p[i] ? pal[p[i] - 1] : ""; });
+    const c = mzc(), g4 = $("#g4"); if (!c || !g4) return;
+    const p = pix[c.id] || [];
+    g4.querySelectorAll("i").forEach((el, i) => { el.style.background = p[i] ? c.palette[p[i] - 1] : ""; });
+    g4.style.opacity = c.can ? "1" : ".5";
   }
   function drawMap() {
-    const q = S && S.q, cv = $("#map"); if (!q || q.type !== "mosaic" || !cv) return;
-    const ctx = cv.getContext("2d"), pal = q.palette || [], W = q.cols * 4, H = q.rows * 4, img = ctx.createImageData(W, H);
-    const data = mosaic && mosaic.r === q.id ? mosaic.data : "";
-    for (let b = 0; b < q.cols * q.rows; b++) for (let i = 0; i < 16; i++) {
+    const c = mzc(), cv = $("#map"); if (!c || !cv) return;
+    const ctx = cv.getContext("2d"), W = c.cols * 4, H = c.rows * 4, img = ctx.createImageData(W, H), mb = myBlock();
+    const data = mosaic && mosaic.r === c.id ? mosaic.data : "";
+    for (let b = 0; b < c.cols * c.rows; b++) for (let i = 0; i < 16; i++) {
       let v = data ? parseInt(data[b * 16 + i] || "0", 16) : 0;
-      if (b === myBlock() && pix[q.id]) v = pix[q.id][i];
-      const hx = v ? pal[v - 1] : "#1b2433", n = parseInt(hx.slice(1), 16), x = (b % q.cols) * 4 + (i % 4), y = Math.floor(b / q.cols) * 4 + Math.floor(i / 4), o = (y * W + x) * 4;
+      if (b === mb && pix[c.id]) v = pix[c.id][i];
+      const hx = v ? c.palette[v - 1] || "#000000" : "#1b2433", n = parseInt(hx.slice(1), 16), x = (b % c.cols) * 4 + (i % 4), y = Math.floor(b / c.cols) * 4 + Math.floor(i / 4), o = (y * W + x) * 4;
       img.data[o] = n >> 16 & 255; img.data[o + 1] = n >> 8 & 255; img.data[o + 2] = n & 255; img.data[o + 3] = 255;
     }
     ctx.putImageData(img, 0, 0);
-    const box = $("#meBox"), b = myBlock();
-    if (box && b != null) { Object.assign(box.style, { left: (b % q.cols) / q.cols * 100 + "%", top: Math.floor(b / q.cols) / q.rows * 100 + "%", width: 100 / q.cols + "%", height: 100 / q.rows + "%" }); }
+    const box = $("#meBox");
+    if (box && mb != null) { Object.assign(box.style, { left: (mb % c.cols) / c.cols * 100 + "%", top: Math.floor(mb / c.cols) / c.rows * 100 + "%", width: 100 / c.cols + "%", height: 100 / c.rows + "%" }); }
   }
-  setInterval(() => { if (!joined && wantJoin && S && S.phase !== "closed") render(); }, 2000);
 })();
 </script>
 </body>
